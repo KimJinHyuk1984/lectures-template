@@ -10,6 +10,8 @@ Phase 1은 별도 확인 후 시작합니다.
 
 ## 새 강의 만드는 법
 
+AI 코딩 도구의 단계별 작업 지시서는 [WORKFLOW.md](WORKFLOW.md)입니다. 복제한 저장소에서 `WORKFLOW.md의 1단계를 수행하라`처럼 지시하세요. 지정한 단계만 수행하며, 판단이 필요한 사항과 각 단계 종료 시에는 보고하고 멈춥니다.
+
 1. GitHub에서 `lecture-template` 저장소의 **Use this template → Create a new repository**로 복제합니다. 예: `ai-squat-king`.
 2. `data/site.js`의 `site.repo`를 복제한 저장소 이름으로 바꾸고, `levels[0]`의 제목·부제·킥커·시간·대상·난이도·태그·액센트를 채웁니다. 기본값은 단일 강의입니다. `otherLectures`도 필요에 맞게 바꿉니다.
 3. `index.html`의 예시 섹션을 강의 내용으로 채웁니다. 히어로와 헤더의 강의 제목은 수정할 필요가 없습니다. 내비게이션은 `.lecture-section`의 `id`와 `h2`를 DOM에서 직접 수집해 만듭니다.
