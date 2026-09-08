@@ -276,7 +276,16 @@
       }
     });
     document.addEventListener("pointerdown", function (event) {
-      if (isOpen() && !menu.contains(event.target)) closeMenu(true);
+      if (isOpen() && !menu.contains(event.target)) {
+        closeMenu(true);
+        // Native pointer focus runs after pointerdown. Restore blank-area clicks
+        // without stealing focus from another button, link, or input.
+        requestAnimationFrame(function () {
+          if (document.activeElement === document.body || document.activeElement === document.getElementById("main") || nav.contains(document.activeElement)) {
+            toggle.focus({ preventScroll: true });
+          }
+        });
+      }
     });
     document.addEventListener("lecture:presentation-enter", function () { closeMenu(true); });
 
