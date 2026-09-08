@@ -57,7 +57,7 @@
   }
 
   function makeAvatar(instructor, large = false) {
-    const name = instructor.name || "강사";
+    const name = instructor.name || "선생님";
     const initials = /[가-힣]/.test(name) ? name.trim().slice(0, 1)
       : name.trim().split(/\s+/).map(function (part) { return part[0]; }).slice(0, 2).join("").toUpperCase();
     const avatar = element("div", "avatar" + (large ? " avatar-large" : ""), initials);
@@ -67,7 +67,7 @@
       const photoPath = String(instructor.photo);
       if (!/^(?:[a-z]+:|\/|\\)/i.test(photoPath) && !photoPath.split(/[\/\\]/).includes("..")) {
         const image = element("img");
-        image.alt = name + " 강사 사진";
+        image.alt = (instructor.name ? name + " 선생님" : name) + " 사진";
         image.loading = "lazy";
         image.width = large ? 80 : 56;
         image.height = large ? 80 : 56;
@@ -106,13 +106,13 @@
     dialog.setAttribute("aria-modal", "true");
     dialog.setAttribute("aria-labelledby", "instructor-dialog-title");
     const top = element("div", "dialog-top");
-    const title = element("h2", "", "강사 소개");
+    const title = element("h2", "", "선생님 소개");
     title.id = "instructor-dialog-title";
     const close = element("button", "button button-icon", "×");
     close.type = "button";
-    close.setAttribute("aria-label", "강사 소개 닫기");
+    close.setAttribute("aria-label", "선생님 소개 닫기");
     top.append(title, close);
-    const name = element("h3", "instructor-name", instructor.name || "강사");
+    const name = element("h3", "instructor-name", instructor.name || "선생님");
     const affiliation = element("p", "instructor-affiliation", instructor.affiliation || "");
     const email = element("a", "instructor-email");
     emailLink(email, instructor.email);
