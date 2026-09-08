@@ -5,6 +5,17 @@
 (function () {
   "use strict";
   const site = window.SITE || {};
+  const levels = Array.isArray(site.levels) ? site.levels : [];
+  // data/site.js 기준으로 이미지 주소를 계산하므로 루트와 하위 강의가 함께 사용합니다.
+  const dataScript = document.querySelector('script[src$="data/site.js"]');
+  const siteRoot = dataScript ? new URL("../", dataScript.src) : new URL("./", document.baseURI);
+  function assetURL(path) { return new URL(path, siteRoot).href; }
+  function currentLevel() {
+    // 단일 강의의 slug는 URL 라우팅에 쓰지 않습니다. 루트가 바로 강의입니다.
+    if (levels.length === 1) return levels[0];
+    const slug = document.body.dataset.level;
+    return slug ? levels.find(function (level) { return level.slug === slug; }) : undefined;
+  }
   const root = document.documentElement;
   const themeKey = "lecture-template-theme";
   const systemTheme = window.matchMedia("(prefers-color-scheme: dark)");
@@ -30,7 +41,8 @@
   }
 
   function applyLectureMeta() {
-    const lecture = site.lecture || {};
+    const lecture = currentLevel();
+    if (!lecture) return;
     const title = lecture.title || "강의 제목";
     document.title = title;
     fill("[data-lecture-title]", title);
@@ -45,7 +57,7 @@
     const badges = document.querySelector("[data-lecture-badges]");
     if (!badges) return;
     badges.replaceChildren();
-    [["소요 시간", lecture.duration], ["대상", lecture.level]].forEach(function ([label, value]) {
+    [["레벨", levels.length > 1 ? lecture.badge : ""], ["난이도", lecture.difficulty], ["소요 시간", lecture.duration], ["대상", lecture.target]].forEach(function ([label, value]) {
       if (!value) return;
       const badge = element("span", "badge", value);
       badge.setAttribute("aria-label", label + ": " + value);
@@ -54,6 +66,109 @@
     (Array.isArray(lecture.tags) ? lecture.tags : []).forEach(function (tag) {
       badges.append(element("span", "badge badge-tag", tag));
     });
+  }
+
+  function renderLevelCards() {
+    const container = document.querySelector("[data-level-cards]");
+    if (!container || levels.length < 2 || currentLevel()) return;
+    const meta = site.site || {};
+    document.title = meta.title || "";
+    fill("[data-site-title]", meta.title);
+    fill("[data-site-subtitle]", meta.subtitle);
+    const description = document.querySelector('meta[name="description"]');
+    if (description) description.content = meta.subtitle || "";
+    container.replaceChildren();
+    levels.forEach(function (level, index) {
+      const item = element("li", "level-path-step");
+      const number = element("span", "path-number", String(index + 1).padStart(2, "0"));
+      number.setAttribute("aria-hidden", "true");
+      const ready = level.status === "ready";
+      const card = element(ready ? "a" : "article", "level-card");
+      card.dataset.status = level.status;
+      card.dataset.accent = level.accent;
+      if (ready) card.setAttribute("href", "./" + encodeURIComponent(level.slug) + "/");
+      else card.setAttribute("aria-disabled", "true");
+      const content = element("div", "level-card-content");
+      const top = element("div", "level-card-top");
+      top.append(element("span", "kicker", [level.emoji, level.badge].filter(Boolean).join(" ")));
+      if (!ready) top.append(element("span", "badge", "준비 중"));
+      content.append(top, element("h3", "", level.title), element("p", "level-subtitle", level.subtitle));
+      const details = element("div", "level-details");
+      [level.difficulty, level.duration].filter(Boolean).forEach(function (value) {
+        details.append(element("span", "badge", value));
+      });
+      const tags = element("div", "level-tags");
+      (level.tags || []).forEach(function (tag) { tags.append(element("span", "badge badge-tag", tag)); });
+      content.append(details, tags);
+      if (ready) content.append(element("span", "level-cta", "강의 시작하기 →"));
+      card.append(content);
+      if (level.cover) {
+        const cover = element("img", "level-cover");
+        cover.src = assetURL(level.cover);
+        cover.alt = level.title + " 강의 표지";
+        cover.width = 1400;
+        cover.height = 763;
+        cover.loading = "lazy";
+        cover.addEventListener("error", function () {
+          cover.remove();
+          card.classList.remove("has-cover");
+        }, { once: true });
+        card.append(cover);
+        card.classList.add("has-cover");
+      }
+      item.append(number, card);
+      container.append(item);
+    });
+  }
+
+  function preparePage() {
+    const lecture = currentLevel();
+    const main = document.querySelector("main");
+    if (!main) return;
+    if (lecture) {
+      document.body.dataset.page = "lecture";
+      document.body.dataset.level = lecture.slug || "lecture";
+      if (levels.length > 1 && !document.querySelector(".back-to-hub")) {
+        const back = element("a", "back-to-hub", "← 강의 목록");
+        back.href = assetURL("");
+        const brand = document.querySelector(".brand");
+        if (brand) brand.before(back);
+      }
+      return;
+    }
+    document.body.dataset.page = "hub";
+    // 기존 루트의 예시 섹션을 숨기고 허브를 생성합니다. HTML의 별도 모드 설정은 없습니다.
+    Array.from(main.children).forEach(function (child) { child.hidden = true; });
+    document.querySelectorAll("[data-section-nav], [data-presentation-toggle], [data-progress]").forEach(function (node) { node.hidden = true; });
+    const meta = site.site || {};
+    fill("[data-lecture-title]", meta.title || "강의 목록");
+    const brand = document.querySelector(".brand");
+    if (brand) brand.setAttribute("aria-label", (meta.title || "강의 목록") + " 처음으로");
+    const hub = element("div", "container");
+    hub.dataset.hub = "";
+    const hero = element("section", "hero");
+    hero.id = "hub-top";
+    if (brand) brand.href = "#hub-top";
+    const heading = element("h1", "", meta.title || "강의 목록");
+    heading.dataset.siteTitle = "";
+    const subtitle = element("p", "hero-subtitle", meta.subtitle || "");
+    subtitle.dataset.siteSubtitle = "";
+    hero.append(heading, subtitle);
+    const cards = element("ol", "level-path");
+    cards.dataset.levelCards = "";
+    cards.setAttribute("aria-label", "강의 목록");
+    const profile = element("div", "hub-instructor");
+    const avatar = element("div");
+    avatar.dataset.instructorAvatar = "";
+    const name = element("h2", "", ((site.instructor || {}).name || "") + " 선생님");
+    const intro = element("button", "button button-primary", "선생님 소개 보기");
+    intro.type = "button";
+    intro.dataset.openInstructor = "";
+    profile.append(avatar, name, intro);
+    hub.append(hero, cards, profile);
+    main.append(hub);
+    if (!levels.length) cards.append(element("li", "", "등록된 강의가 없습니다."));
+    renderLevelCards();
   }
 
   function makeAvatar(instructor, large = false) {
@@ -77,7 +192,7 @@
           avatar.removeAttribute("aria-label");
         }, { once: true });
         image.addEventListener("error", function () { image.remove(); }, { once: true });
-        image.src = photoPath;
+        image.src = assetURL(photoPath);
         avatar.append(image);
       }
     }
@@ -339,8 +454,8 @@
 
   function initSectionProgress() {
     const sections = Array.from(document.querySelectorAll("main .lecture-section[id]"));
-    const slug = String((site.lecture || {}).slug || "lecture").trim() || "lecture";
-    const key = "lecture-progress:" + slug;
+    const slug = String(currentLevel().slug || "lecture");
+    const key = "lecture-progress:" + String((site.site || {}).repo || "lecture") + ":" + slug;
     let visited = [];
     try {
       const saved = JSON.parse(localStorage.getItem(key) || "[]");
@@ -387,71 +502,291 @@
     const sections = Array.from(document.querySelectorAll("main .lecture-section[id]"));
     const button = document.querySelector("[data-presentation-toggle]");
     if (!sections.length || !button) return;
+
+    // Equal nonempty data-slide values group existing elements without changing
+    // reading layout. Empty values each start a slide. A template can reference
+    // an existing pre by ID: data-slide-code + data-slide-lines (no duplicate code).
+    const allSlides = [];
+    sections.forEach(function (section, sectionIndex) {
+      const groups = new Map();
+      const markers = Array.from(section.querySelectorAll("[data-slide]"));
+      if (!markers.length) markers.push(section);
+      markers.forEach(function (marker) {
+        const key = marker.dataset.slide || Symbol();
+        let slide = groups.get(key);
+        if (!slide) {
+          slide = { section, sectionIndex, title: marker.dataset.slideTitle || "", markers: [] };
+          groups.set(key, slide);
+          allSlides.push(slide);
+        }
+        slide.markers.push(marker);
+        if (marker.hasAttribute("data-slide-skip")) slide.skip = true;
+      });
+    });
+    let includeSkipped = false;
+    let slides = allSlides.filter(function (slide) { return !slide.skip; });
+    const stage = element("div", "presentation-stage");
+    stage.hidden = true;
+    stage.tabIndex = -1;
+    stage.setAttribute("role", "region");
+    stage.setAttribute("aria-label", "발표 화면");
+    const title = element("h2", "presentation-title");
+    const viewport = element("div", "presentation-viewport");
+    viewport.tabIndex = 0;
+    viewport.setAttribute("aria-label", "발표 조각 내용");
+    const content = element("div", "presentation-content");
+    const fitFrame = element("div", "presentation-fit-frame");
+    const overflowHint = element("p", "presentation-overflow-hint", "↓ 내용이 더 있습니다. 이 영역에서 스크롤하세요.");
+    overflowHint.hidden = true;
+    fitFrame.append(content);
+    viewport.append(fitFrame);
+    stage.append(title, viewport, overflowHint);
     const hud = element("div", "presentation-hud");
     hud.hidden = true;
     hud.setAttribute("role", "status");
     hud.setAttribute("aria-live", "polite");
     const counter = element("strong", "presentation-counter");
-    const hint = element("span", "", "← → 이동 · B 블랙아웃 · P 또는 Esc 종료");
-    hud.append(counter, hint);
+    const skipStatus = element("span", "presentation-skip-status");
+    hud.append(counter, skipStatus, element("span", "", "← → 조각 · Shift + 방향키 섹션 · B 블랙아웃 · P / Esc 종료"));
     const blackout = element("div", "presentation-blackout");
     blackout.hidden = true;
     blackout.setAttribute("aria-hidden", "true");
-    document.body.append(hud, blackout);
+    document.body.append(stage, hud, blackout);
     let index = 0;
     let returnFocus = null;
-
+    let moved = [];
+    let annotations = [];
+    let fitting = false;
+    let auditing = false;
+    let transition = null;
+    const imageStyles = new Map();
+    const overflow = new Map();
+    const warned = new Set();
+    const presenting = function () { return !stage.hidden; };
     function dialogOpen() {
       return Array.from(document.querySelectorAll("dialog")).some(function (dialog) { return dialog.open; });
     }
-    function show(nextIndex) {
-      index = Math.max(0, Math.min(sections.length - 1, nextIndex));
-      sections.forEach(function (section, sectionIndex) {
-        section.classList.toggle("is-presentation-section", sectionIndex === index);
+    function restore() {
+      imageStyles.forEach(function (style, img) {
+        if (style === null) img.removeAttribute("style");
+        else img.setAttribute("style", style);
       });
-      const current = sections[index];
-      current.scrollTop = 0;
-      counter.textContent = (index + 1) + " / " + sections.length;
-      current.dispatchEvent(new CustomEvent("lecture:section-viewed"));
+      imageStyles.clear();
+      if (transition) { transition.cancel(); transition = null; }
+      annotations.forEach(function (note) { note.remove(); });
+      annotations = [];
+      content.querySelectorAll(".is-slide-line-hidden").forEach(function (line) {
+        line.classList.remove("is-slide-line-hidden");
+      });
+      moved.reverse().forEach(function (entry) {
+        entry.placeholder.replaceWith(entry.node);
+      });
+      moved = [];
+    }
+    function move(node) {
+      if (content.contains(node)) return;
+      const placeholder = document.createComment("presentation: original position");
+      node.before(placeholder);
+      moved.push({ node, placeholder });
+      content.append(node);
+    }
+    function sliceCode(pre, range) {
+      const match = /^(\d+)-(\d+)$/.exec(range || "");
+      if (!match) return;
+      const lines = Array.from(pre.querySelectorAll(".code-line"));
+      // A trailing LF creates an empty display span, not another source line.
+      const total = lines.length - (lines.length > 1 && !lines[lines.length - 1].querySelector(".line-content").textContent ? 1 : 0);
+      const first = Math.max(1, Math.min(total, Number(match[1])));
+      const last = Math.max(first, Math.min(total, Number(match[2])));
+      lines.forEach(function (line, i) { line.classList.toggle("is-slide-line-hidden", i + 1 < first || i + 1 > last); });
+      const note = element("span", "presentation-code-range", first + "번 줄 ~ " + last + "번 줄 / 전체 " + total + "줄");
+      pre.closest(".code-block").querySelector(".code-toolbar").append(note);
+      annotations.push(note);
+    }
+    function fit() {
+      if (!presenting() || fitting) return;
+      fitting = true;
+      overflowHint.hidden = true;
+      viewport.classList.remove("has-overflow");
+      fitFrame.classList.remove("is-scaled");
+      fitFrame.style.height = "";
+      content.style.transform = "";
+      const slide = slides[index];
+      const widget = content.querySelector("[data-widget]");
+      const images = Array.from(content.querySelectorAll("figure img"));
+      const contain = !!widget || images.length > 0 || (slide && slide.markers.some(function (marker) { return marker.dataset.slideFit === "contain"; }));
+      stage.dataset.fitType = contain ? "contain" : "text";
+      stage.dataset.fitScale = "1";
+      const sizes = contain ? [[28, 24]] : [[28, 24], [27, 23], [26, 22], [25, 21], [24, 20]];
+      for (const size of sizes) {
+        stage.style.setProperty("--slide-body", size[0] + "px");
+        stage.style.setProperty("--slide-code", size[1] + "px");
+        if (viewport.scrollHeight <= viewport.clientHeight && content.scrollHeight <= viewport.clientHeight - 2) break;
+      }
+      if (contain && images.length && !widget) {
+        images.forEach(function (img) {
+          if (!imageStyles.has(img)) imageStyles.set(img, img.getAttribute("style"));
+          img.style.height = "auto";
+          img.style.maxHeight = "none";
+        });
+        const imageHeight = images.reduce(function (sum, img) { return sum + img.getBoundingClientRect().height; }, 0);
+        const otherHeight = content.scrollHeight - imageHeight;
+        const available = Math.max(1, (viewport.clientHeight - otherHeight - 2) / images.length);
+        images.forEach(function (img) { img.style.maxHeight = available + "px"; });
+      } else if (contain) {
+        // A transform alone leaves the unscaled layout box in the scroll area.
+        // The frame takes the rendered height; top origin prevents upper clipping.
+        const naturalHeight = content.scrollHeight;
+        const scale = Math.max(0.6, Math.min(1, (viewport.clientHeight - 2) / Math.max(1, naturalHeight), viewport.clientWidth / Math.max(1, content.scrollWidth)));
+        if (scale < 1) {
+          fitFrame.classList.add("is-scaled");
+          fitFrame.style.height = Math.ceil(naturalHeight * scale) + "px";
+          content.style.transform = "scale(" + scale + ")";
+        }
+        stage.dataset.fitScale = scale.toFixed(4);
+      }
+      // Measure the actual scroll container, not the document or only its child.
+      const excess = viewport.scrollHeight - viewport.clientHeight;
+      if (excess > 0) {
+        const item = { slide: index + 1, section: slide ? slide.section.id : "", title: title.textContent, scrollHeight: viewport.scrollHeight, clientHeight: viewport.clientHeight, overflowPx: excess, type: stage.dataset.fitType, scale: stage.dataset.fitScale };
+        overflow.set(index, item);
+        overflowHint.hidden = false;
+        viewport.classList.add("has-overflow");
+        if (!auditing && !warned.has(index)) {
+          console.warn("[발표 조각 넘침] 더 작은 조각으로 나누세요.", item);
+          warned.add(index);
+        }
+      } else overflow.delete(index);
+      fitting = false;
+    }
+    function show(nextIndex, silent) {
+      restore();
+      skipStatus.textContent = "S · 건너뛴 조각 " + (includeSkipped ? "포함" : "제외");
+      stage.dataset.includeSkipped = String(includeSkipped);
+      if (!slides.length) {
+        index = 0;
+        stage.dataset.slideIndex = "0";
+        stage.dataset.section = "";
+        title.textContent = "표시할 조각이 없습니다. S를 눌러 전체 조각을 확인하세요.";
+        counter.textContent = "0 / 0 · 섹션 0/" + sections.length;
+        overflowHint.hidden = true;
+        stage.focus({ preventScroll: true });
+        return;
+      }
+      index = Math.max(0, Math.min(slides.length - 1, nextIndex));
+      const slide = slides[index];
+      const sectionTitle = slide.section.querySelector("h2").textContent.trim();
+      title.textContent = sectionTitle + (slide.title && slide.title !== sectionTitle ? " · " + slide.title : "");
+      slide.markers.forEach(function (marker) {
+        // Optional teaching outline; S restores the unchanged original range.
+        const preview = !includeSkipped && marker.dataset.slidePreview;
+        const source = preview ? document.getElementById(preview) : marker.dataset.slideCode ? document.getElementById(marker.dataset.slideCode) : marker;
+        if (!source) return;
+        const node = source.matches("pre[data-code]") ? source.closest(".code-block") : source;
+        move(node);
+        if (source.matches("pre[data-code]")) sliceCode(source, preview ? source.dataset.slideLines : marker.dataset.slideLines);
+        else source.querySelectorAll("pre[data-slide-lines]").forEach(function (pre) { sliceCode(pre, pre.dataset.slideLines); });
+      });
+      content.querySelectorAll("pre[data-code]").forEach(function (pre) {
+        const last = pre.querySelector(".code-line:last-child");
+        if (last && !last.querySelector(".line-content").textContent) last.classList.add("is-slide-line-hidden");
+      });
+      stage.dataset.slideIndex = String(index + 1);
+      stage.dataset.section = slide.section.id;
+      counter.textContent = (index + 1) + " / " + slides.length + " · 섹션 " + (slide.sectionIndex + 1) + "/" + sections.length;
+      viewport.scrollTop = 0;
+      fit();
+      if (!silent) {
+        slide.section.dispatchEvent(new CustomEvent("lecture:section-viewed"));
+        stage.focus({ preventScroll: true });
+        if (!reducedMotion.matches) transition = content.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 120 });
+      }
     }
     function enter() {
       if (dialogOpen()) return;
+      includeSkipped = false;
+      slides = allSlides.filter(function (slide) { return !slide.skip; });
+      overflow.clear();
+      warned.clear();
       document.dispatchEvent(new CustomEvent("lecture:presentation-enter"));
       returnFocus = document.activeElement;
       const current = document.querySelector('[data-section-nav] a[aria-current="location"]');
-      const currentIndex = current ? sections.findIndex(function (section) { return section.id === current.dataset.sectionId; }) : -1;
+      const start = current ? slides.findIndex(function (slide) { return slide.section.id === current.dataset.sectionId; }) : 0;
+      // Do not reveal answers on entry. Later visits preserve the teacher's choice.
+      sections.forEach(function (section) { section.querySelectorAll("details").forEach(function (detail) { detail.open = false; }); });
       document.body.classList.add("is-presenting");
       button.setAttribute("aria-pressed", "true");
-      hud.hidden = false;
-      blackout.hidden = false;
-      show(currentIndex >= 0 ? currentIndex : 0);
+      stage.hidden = hud.hidden = blackout.hidden = false;
+      show(start >= 0 ? start : 0);
     }
     function exit() {
+      const section = slides[index] ? slides[index].section : sections[0];
+      restore();
+      stage.hidden = hud.hidden = blackout.hidden = true;
       document.body.classList.remove("is-presenting", "is-blackout");
+      blackout.setAttribute("aria-hidden", "true");
       button.setAttribute("aria-pressed", "false");
-      hud.hidden = true;
-      blackout.hidden = true;
-      sections.forEach(function (section) { section.classList.remove("is-presentation-section"); });
-      sections[index].scrollIntoView({ block: "start", behavior: reducedMotion.matches ? "auto" : "smooth" });
+      section.scrollIntoView({ block: "start", behavior: reducedMotion.matches ? "auto" : "smooth" });
       if (returnFocus && returnFocus.isConnected) returnFocus.focus({ preventScroll: true });
     }
-    function toggle() {
-      if (document.body.classList.contains("is-presenting")) exit();
-      else enter();
-    }
+    // Scan every slide at the current viewport; no section progress is recorded.
+    // Call in DevTools while presenting: reportPresentationOverflow().
+    window.reportPresentationOverflow = function () {
+      if (!presenting()) { console.info("P로 발표 모드에 들어간 뒤 다시 실행하세요."); return []; }
+      const saved = index;
+      const focused = document.activeElement;
+      const scroll = viewport.scrollTop;
+      auditing = true;
+      overflow.clear();
+      slides.forEach(function (_, i) { show(i, true); });
+      const result = Array.from(overflow.values());
+      show(saved, true);
+      auditing = false;
+      viewport.scrollTop = scroll;
+      if (focused && focused.isConnected) focused.focus({ preventScroll: true });
+      console.table(result);
+      console.info("발표 조각 " + slides.length + "개 검사 · 넘침 " + result.length + "개");
+      return result;
+    };
     button.setAttribute("aria-pressed", "false");
-    button.addEventListener("click", toggle);
+    button.addEventListener("click", function () { if (presenting()) exit(); else enter(); });
+    window.addEventListener("resize", fit);
+    // Images, widget content and opening a details answer can change the height.
+    if ("ResizeObserver" in window) new ResizeObserver(function () { fit(); }).observe(content);
+    content.addEventListener("load", fit, true);
+    content.addEventListener("toggle", fit, true);
     document.addEventListener("keydown", function (event) {
       if (event.defaultPrevented || event.repeat || event.altKey || event.ctrlKey || event.metaKey || dialogOpen()) return;
       const target = event.target;
       if (target instanceof Element && (target.matches("input, textarea, select") || target.isContentEditable)) return;
-      const presenting = document.body.classList.contains("is-presenting");
-      if (event.key.toLowerCase() === "p") { event.preventDefault(); toggle(); return; }
-      if (!presenting) return;
+      if (event.key.toLowerCase() === "p") { event.preventDefault(); if (presenting()) exit(); else enter(); return; }
+      if (!presenting()) return;
+      const backwards = ["ArrowLeft", "ArrowUp", "PageUp"].includes(event.key);
+      const forwards = ["ArrowRight", "ArrowDown", "PageDown"].includes(event.key);
+      if ((backwards || forwards) && target instanceof Element && target.closest("[data-widget]")) return;
       if (event.key === "Escape") { event.preventDefault(); exit(); }
-      else if (event.key === "ArrowLeft" || event.key === "PageUp") { event.preventDefault(); show(index - 1); }
-      else if (event.key === "ArrowRight" || event.key === "PageDown") { event.preventDefault(); show(index + 1); }
-      else if (event.key.toLowerCase() === "b") {
+      else if (event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        const current = slides[index];
+        const originalIndex = allSlides.indexOf(current);
+        includeSkipped = !includeSkipped;
+        slides = allSlides.filter(function (slide) { return includeSkipped || !slide.skip; });
+        let next = slides.indexOf(current);
+        if (next < 0) next = slides.findIndex(function (slide) { return allSlides.indexOf(slide) > originalIndex; });
+        overflow.clear();
+        warned.clear();
+        show(next >= 0 ? next : slides.length - 1);
+      } else if (backwards || forwards) {
+        event.preventDefault();
+        if (!slides.length) return;
+        const direction = backwards ? -1 : 1;
+        if (event.shiftKey && event.key.startsWith("Arrow")) {
+          const visibleSections = Array.from(new Set(slides.map(function (slide) { return slide.sectionIndex; })));
+          const currentSection = visibleSections.indexOf(slides[index].sectionIndex);
+          const targetSection = visibleSections[Math.max(0, Math.min(visibleSections.length - 1, currentSection + direction))];
+          show(slides.findIndex(function (slide) { return slide.sectionIndex === targetSection; }));
+        } else show(index + direction);
+      } else if (event.key.toLowerCase() === "b") {
         event.preventDefault();
         const active = document.body.classList.toggle("is-blackout");
         blackout.setAttribute("aria-hidden", String(!active));
@@ -644,16 +979,19 @@
   }
 
   function init() {
+    preparePage();
     applyLectureMeta();
     renderInstructorModal();
     renderOtherLectures();
     initThemeToggle();
-    initCodeBlocks();
-    initNav();
-    initSectionProgress();
-    initPresentationMode();
-    initProgressBar();
-    initReveal();
+    if (currentLevel()) {
+      initCodeBlocks();
+      initNav();
+      initSectionProgress();
+      initPresentationMode();
+      initProgressBar();
+      initReveal();
+    }
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init, { once: true });
   else init();
